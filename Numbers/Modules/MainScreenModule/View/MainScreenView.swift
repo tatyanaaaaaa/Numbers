@@ -10,11 +10,27 @@ import UIKit
 /// События которые отправляем из View в Presenter
 protocol MainScreenViewOutput: AnyObject {
   
+  /// Было выбрано простое число
+  func selectedPrimeNumbers()
+  
+  /// Были выбраны числа фибоначчи
+  func selectedFibonacciNumbers()
+  
+  /// Добавить еще моделек для простых чисел
+  ///  - Parameter models: Список моделек для ячеек
+  func morePrimeNumbers(models: [MainScreenCellModel])
+  
+  /// Добавить еще моделек для фибоначчи
+  ///  - Parameter models: Список моделек для ячеек
+  func moreFibonacciNumbers(models: [MainScreenCellModel])
 }
 
 /// События которые отправляем от Presenter ко View
 protocol MainScreenViewInput: AnyObject {
   
+  /// Настройка главного экрана
+  ///  - Parameter models: Список моделек для ячейки
+  func configureCellsWith(models: [MainScreenCellModel])
 }
 
 /// Псевдоним протокола UIView & MainScreenViewInput
@@ -30,9 +46,10 @@ final class MainScreenView: MainScreenViewProtocol {
   // MARK: - Private properties
   
   private let collectionViewLayout = UICollectionViewFlowLayout()
+  private let segmentedControl = UISegmentedControl()
   private lazy var collectionView = UICollectionView(frame: .zero,
                                                      collectionViewLayout: collectionViewLayout)
-  private var models: [String] = ["Тест", "Тест2", "Тест"]
+  private var models: [MainScreenCellModel] = []
   
   // MARK: - Initialization
   
@@ -49,7 +66,7 @@ final class MainScreenView: MainScreenViewProtocol {
   
   // MARK: - Internal func
   
-  func configureCellsWith(models: [String]) {
+  func configureCellsWith(models: [MainScreenCellModel]) {
     self.models = models
     collectionView.reloadData()
   }
@@ -59,16 +76,26 @@ final class MainScreenView: MainScreenViewProtocol {
   private func configureLayout() {
     let appearance = Appearance()
     
-    [collectionView].forEach {
+    [collectionView, segmentedControl].forEach {
       $0.translatesAutoresizingMaskIntoConstraints = false
       addSubview($0)
     }
     
     NSLayoutConstraint.activate([
-      collectionView.topAnchor.constraint(equalTo: topAnchor, constant: appearance.collectionViewInsets.top),
-      collectionView.leftAnchor.constraint(equalTo: leftAnchor, constant: appearance.collectionViewInsets.left),
-      collectionView.rightAnchor.constraint(equalTo: rightAnchor, constant: -appearance.collectionViewInsets.right),
-      collectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -appearance.collectionViewInsets.bottom),
+      segmentedControl.leadingAnchor.constraint(equalTo: leadingAnchor,
+                                                constant: appearance.segmantedControl),
+      segmentedControl.trailingAnchor.constraint(equalTo: trailingAnchor,
+                                                 constant: -appearance.segmantedControl),
+      segmentedControl.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+      
+      collectionView.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor,
+                                          constant: appearance.collectionViewInsets.top),
+      collectionView.leadingAnchor.constraint(equalTo: leadingAnchor,
+                                              constant: appearance.collectionViewInsets.left),
+      collectionView.trailingAnchor.constraint(equalTo: trailingAnchor,
+                                               constant: -appearance.collectionViewInsets.right),
+      collectionView.bottomAnchor.constraint(equalTo: bottomAnchor,
+                                             constant: -appearance.collectionViewInsets.bottom),
     ])
   }
   
@@ -91,12 +118,62 @@ final class MainScreenView: MainScreenViewProtocol {
     
     collectionView.delegate = self
     collectionView.dataSource = self
+    
+    segmentedControl.insertSegment(withTitle: appearance.primeNumbersTitle,
+                                   at: appearance.primeNumbersIndex,
+                                   animated: true)
+    segmentedControl.insertSegment(withTitle: appearance.fibonacciNumbersTitle,
+                                   at: appearance.fibonacciNumbersIndex,
+                                   animated: true)
+    segmentedControl.addTarget(self,
+                               action: #selector(segmentedControlAction(_:)),
+                               for: .valueChanged)
+    segmentedControl.selectedSegmentIndex = appearance.primeNumbersIndex
+  }
+  
+  @objc
+  private func segmentedControlAction(_ segmentedControl: UISegmentedControl) {
+    let appearance = Appearance()
+    
+    if segmentedControl.selectedSegmentIndex == appearance.primeNumbersIndex {
+      output?.selectedPrimeNumbers()
+      scrollToTop()
+      return
+    }
+    
+    if segmentedControl.selectedSegmentIndex == appearance.fibonacciNumbersIndex {
+      output?.selectedFibonacciNumbers()
+      scrollToTop()
+      return
+    }
+  }
+  
+  private func scrollToTop() {
+    collectionView.scrollToItem(at: IndexPath(row: .zero,
+                                              section: .zero),
+                                at: .top,
+                                animated: false)
   }
 }
 
 // MARK: - UICollectionViewDelegate
 
-extension MainScreenView: UICollectionViewDelegate { }
+extension MainScreenView: UICollectionViewDelegate {
+  func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+    let appearance = Appearance()
+    if indexPath.row == models.count - 1 {
+      if segmentedControl.selectedSegmentIndex == appearance.primeNumbersIndex {
+        output?.morePrimeNumbers(models: models)
+        return
+      }
+      
+      if segmentedControl.selectedSegmentIndex == appearance.fibonacciNumbersIndex {
+        output?.moreFibonacciNumbers(models: models)
+        return
+      }
+    }
+  }
+}
 
 // MARK: - UICollectionViewDataSource
 
@@ -113,7 +190,7 @@ extension MainScreenView: UICollectionViewDataSource {
       return UICollectionViewCell()
     }
     let model = models[indexPath.row]
-    cell.configureCellWith(text: model, style: .dark)
+    cell.configureCellWith(text: model.value, style: model.style)
     return cell
   }
 }
@@ -125,10 +202,15 @@ private extension MainScreenView {
     let collectionViewInsets: UIEdgeInsets = .zero
     let backgroundColor = UIColor.white
     let estimatedRowHeight: CGFloat = 64
+    let segmantedControl: CGFloat = 16
     let sectionInset = UIEdgeInsets(top: .zero,
                                     left: .zero,
                                     bottom: .zero,
                                     right: .zero)
     let cellWidthConstant = UIScreen.main.bounds.width * 0.5
+    let primeNumbersTitle = "Простые числа"
+    let fibonacciNumbersTitle = "Числа Фибоначчи"
+    let primeNumbersIndex: Int = 0
+    let fibonacciNumbersIndex: Int = 1
   }
 }
